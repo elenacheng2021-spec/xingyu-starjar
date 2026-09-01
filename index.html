@@ -1,18 +1,936 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#3f493d" />
-    <meta name="description" content="把文字、图片与声音折成星星，在灵感碰撞中发现新的创作方向。" />
-    <meta property="og:title" content="星予｜你的私人灵感瓶" />
-    <meta property="og:description" content="把文字、图片与声音折成星星。" />
-    <meta property="og:image" content="./og.png" />
-    <link rel="icon" href="./favicon.svg" />
-    <title>星予｜你的私人灵感瓶</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#2f352c" />
+  <meta name="description" content="把文字、图片与音乐灵感折成星星，在摇晃与碰撞中发现新的创作方向。" />
+  <meta property="og:title" content="灵感许愿瓶｜第一阶段开发" />
+  <meta property="og:description" content="一张私人书桌，一只只属于当前浏览器的灵感瓶。" />
+  <meta property="og:image" content="https://cdn.jsdelivr.net/gh/elenacheng2021-spec/xingyu-starjar@main/public/og.png" />
+  <title>灵感许愿瓶｜第一阶段开发</title>
+
+  <!-- Tailwind CSS 通过 CDN 加载，无需 npm、构建工具或本地依赖。 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { ink: '#384037', cream: '#f6efdf', sage: '#82937b', honey: '#e8c56f' },
+          fontFamily: {
+            display: ['Noto Serif SC', 'Songti SC', 'STSong', 'serif'],
+            sans: ['Noto Sans SC', 'Microsoft YaHei UI', 'sans-serif']
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      --cream: #f7f0df;
+      --ink: #384037;
+      --sage: #83927c;
+      --honey: #e9c771;
+      --paper: rgba(249, 242, 222, .96);
+      --lamp-brightness: 1;
+      --lamp-saturation: 1;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #171b17; }
+    body { color: var(--ink); font-family: 'Noto Sans SC', sans-serif; }
+    button, input, textarea { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+
+    /*
+      最重要的场景结构：
+      1. scene-frame 是相对定位容器；
+      2. scene-image 是唯一一张完整背景图；
+      3. 任何物体都没有被切图、复制或作为局部背景再次绘制。
+    */
+    .app-shell {
+      position: relative;
+      display: grid;
+      width: 100vw;
+      height: 100vh;
+      place-items: center;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 32%, #475044 0, #252b24 47%, #141713 100%);
+    }
+    .scene-frame {
+      position: relative;
+      width: min(100vw, calc(100vh * 1.7779));
+      height: min(100vh, calc(100vw / 1.7779));
+      overflow: hidden;
+      isolation: isolate;
+      box-shadow: 0 0 80px rgba(0, 0, 0, .55);
+    }
+    .scene-image {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      filter: brightness(var(--lamp-brightness)) saturate(var(--lamp-saturation));
+      transition: filter 1.1s cubic-bezier(.2,.7,.2,1);
+      user-select: none;
+      pointer-events: none;
+    }
+    .scene-light {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 15% 35%, rgba(255, 217, 126, .10), transparent 27%),
+        radial-gradient(circle at 50% 54%, rgba(255, 225, 146, .08), transparent 25%),
+        linear-gradient(to bottom, transparent 55%, rgba(20, 19, 14, .12));
+      transition: background 1.1s ease, opacity 1.1s ease;
+    }
+    .app-shell.lamp-off { --lamp-brightness: .48; --lamp-saturation: .64; }
+    .lamp-off .scene-light {
+      background:
+        radial-gradient(circle at 50% 54%, rgba(247, 211, 116, .17), transparent 20%),
+        linear-gradient(rgba(9, 13, 13, .22), rgba(5, 8, 8, .45));
+    }
+
+    .brand {
+      position: absolute;
+      top: 3.2%;
+      left: 3.2%;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(255, 249, 227, .92);
+      text-shadow: 0 2px 16px rgba(0, 0, 0, .55);
+      pointer-events: none;
+    }
+    .brand-mark {
+      display: grid;
+      width: 40px;
+      height: 40px;
+      place-items: center;
+      border: 1px solid rgba(255, 244, 204, .34);
+      border-radius: 50%;
+      background: rgba(45, 52, 42, .35);
+      color: #f2d98a;
+      backdrop-filter: blur(8px);
+    }
+    .brand strong { display: block; font-family: 'Noto Serif SC', serif; font-size: clamp(16px, 1.65vw, 25px); letter-spacing: .18em; }
+    .brand small { display: block; margin-top: 2px; font-family: 'Noto Serif SC', serif; font-size: clamp(8px, .68vw, 11px); letter-spacing: .16em; opacity: .72; }
+    .privacy-note {
+      position: absolute;
+      top: 4%;
+      left: 50%;
+      z-index: 20;
+      padding: 7px 14px;
+      border: 1px solid rgba(255, 245, 217, .22);
+      border-radius: 999px;
+      background: rgba(49, 58, 48, .43);
+      color: rgba(255, 249, 232, .78);
+      font-size: clamp(8px, .7vw, 11px);
+      letter-spacing: .08em;
+      transform: translateX(-50%);
+      backdrop-filter: blur(10px);
+      pointer-events: none;
+    }
+
+    /* 五个透明热区只承担交互；after 是局部光晕，不是图像切片。 */
+    .hotspot {
+      position: absolute;
+      z-index: 12;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      outline: none;
+      touch-action: none;
+    }
+    .hotspot::after {
+      position: absolute;
+      inset: 3%;
+      border: 1px solid rgba(255, 231, 164, 0);
+      border-radius: 48%;
+      background: radial-gradient(ellipse, rgba(255, 231, 164, 0), transparent 65%);
+      box-shadow: 0 0 0 rgba(255, 224, 135, 0);
+      content: '';
+      opacity: 0;
+      transform: scale(.97);
+      transition: opacity .25s ease, transform .42s cubic-bezier(.2,.75,.25,1), box-shadow .32s ease, background .32s ease;
+    }
+    .hotspot:hover::after,
+    .hotspot:focus-visible::after {
+      opacity: 1;
+      transform: scale(1.045) translateY(-1.5%);
+      border-color: rgba(255, 236, 181, .16);
+      background: radial-gradient(ellipse, rgba(255, 229, 151, .13), transparent 67%);
+      box-shadow: 0 0 28px rgba(255, 220, 121, .22);
+    }
+    .hotspot:focus-visible { box-shadow: 0 0 0 2px rgba(255, 239, 188, .72); border-radius: 44%; }
+    .hotspot-lamp { left: 0; top: 10%; width: 23%; height: 56%; }
+    .hotspot-note { left: 12%; top: 67%; width: 30%; height: 27%; }
+    .hotspot-jar { left: 37%; top: 20%; width: 26%; height: 59%; border-radius: 36% 36% 22% 22%; }
+    .hotspot-album { left: 59%; top: 52%; width: 36%; height: 20%; }
+    .hotspot-vinyl { left: 78%; top: 65%; width: 22%; height: 28%; }
+    .hotspot-note:hover::after { transform: scale(1.05) translateY(-4%) rotate(-1deg); }
+    .hotspot-album:hover::after { transform: scale(1.035) translateY(-3%) rotate(.5deg); }
+    .hotspot-vinyl:hover::after { transform: scale(1.04) rotate(1deg); }
+    .hotspot-lamp:hover::after { background: radial-gradient(circle at 62% 20%, rgba(255, 215, 116, .24), transparent 50%); }
+    .hotspot-jar:hover::after { animation: jar-hover .72s ease-in-out infinite alternate; }
+    @keyframes jar-hover {
+      from { transform: scale(1.015) rotate(-.35deg); box-shadow: 0 0 24px rgba(255,220,122,.18); }
+      to { transform: scale(1.04) rotate(.35deg); box-shadow: 0 0 38px rgba(255,225,137,.30); }
+    }
+
+    .jar-aura {
+      position: absolute;
+      left: 39.5%;
+      top: 25%;
+      z-index: 5;
+      width: 21%;
+      height: 52%;
+      border-radius: 40% 40% 24% 24%;
+      pointer-events: none;
+      box-shadow: inset 0 0 25px rgba(255, 221, 125, .12), 0 0 30px rgba(255, 218, 112, .12);
+      transition: box-shadow .9s ease, filter .9s ease;
+    }
+    .lamp-off .jar-aura { box-shadow: inset 0 0 36px rgba(255, 226, 138, .23), 0 0 43px rgba(255, 217, 105, .24); filter: brightness(1.12); }
+    .jar-shaking .jar-aura,
+    .jar-shaking .hotspot-jar::after { animation: jar-shake .12s linear 10; opacity: 1; }
+    @keyframes jar-shake {
+      0% { transform: translateX(-4px) rotate(-1.2deg) scale(1.02); }
+      50% { transform: translateX(4px) rotate(1.2deg) scale(1.035); }
+      100% { transform: translateX(-2px) rotate(-.7deg) scale(1.02); }
+    }
+
+    .bottle-stars {
+      position: absolute;
+      left: 40.1%;
+      top: 31%;
+      z-index: 7;
+      width: 19.8%;
+      height: 43.5%;
+      overflow: hidden;
+      border-radius: 30% 30% 21% 21%;
+      pointer-events: none;
+    }
+    .stored-star {
+      position: absolute;
+      color: var(--star-color, #f3cf70);
+      font-size: clamp(8px, 1.15vw, 18px);
+      line-height: 1;
+      filter: drop-shadow(0 0 5px rgba(255, 226, 142, .8));
+      animation: star-breathe 3.6s ease-in-out infinite alternate;
+      transition: left .9s ease, top .9s ease;
+    }
+    .stored-star.new { animation: new-star-float 3s ease-in-out infinite alternate; }
+    @keyframes star-breathe { from { transform: translateY(1px) rotate(-3deg); opacity: .7; } to { transform: translateY(-4px) rotate(5deg) scale(1.08); opacity: 1; } }
+    @keyframes new-star-float { from { transform: translateY(2px) rotate(-8deg) scale(1.04); } to { transform: translateY(-10px) rotate(8deg) scale(1.14); } }
+
+    .ambient-particles,
+    .burst-layer { position: absolute; inset: 0; z-index: 8; pointer-events: none; }
+    .ambient-particle {
+      position: absolute;
+      left: var(--x);
+      top: var(--y);
+      color: rgba(255, 237, 173, .85);
+      font-size: clamp(5px, .6vw, 10px);
+      text-shadow: 0 0 8px #ffe4a0;
+      animation: particle-float var(--duration) ease-in-out var(--delay) infinite alternate;
+    }
+    @keyframes particle-float { from { transform: translate(-2px, 5px) scale(.7); opacity: .28; } to { transform: translate(5px, -13px) scale(1.2); opacity: .95; } }
+    .burst-particle {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      color: #ffe6a2;
+      text-shadow: 0 0 8px #ffd773;
+      animation: particle-burst .9s cubic-bezier(.1,.65,.25,1) forwards;
+    }
+    @keyframes particle-burst { to { transform: translate(var(--dx), var(--dy)) rotate(var(--turn)) scale(.25); opacity: 0; } }
+
+    .shake-dock {
+      position: absolute;
+      left: 50%;
+      bottom: 3.5%;
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 8px 10px;
+      border: 1px solid rgba(255, 243, 205, .24);
+      border-radius: 999px;
+      background: rgba(44, 49, 40, .54);
+      box-shadow: 0 12px 32px rgba(0,0,0,.22), inset 0 1px rgba(255,255,255,.12);
+      transform: translateX(-50%);
+      backdrop-filter: blur(10px);
+    }
+    .tone-dots { display: flex; gap: 5px; }
+    .tone-dot {
+      width: 15px;
+      height: 15px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,.5);
+      border-radius: 50%;
+      background: var(--dot);
+      box-shadow: 0 1px 5px rgba(0,0,0,.2);
+      cursor: pointer;
+      transition: transform .2s ease, box-shadow .2s ease;
+    }
+    .tone-dot:hover, .tone-dot.active { transform: translateY(-2px) scale(1.18); box-shadow: 0 0 0 2px rgba(255,248,223,.52), 0 2px 8px rgba(0,0,0,.25); }
+    .shake-button {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(247, 232, 188, .93);
+      padding: 7px 13px;
+      color: #4b513f;
+      font-family: 'Noto Serif SC', serif;
+      font-size: clamp(10px, .76vw, 12px);
+      letter-spacing: .08em;
+      cursor: pointer;
+      transition: transform .2s ease, background .2s ease;
+    }
+    .shake-button:hover { transform: translateY(-2px); background: #fff3ce; }
+    .star-count { color: rgba(255,244,207,.82); font-size: 10px; min-width: 26px; text-align: center; }
+    .record-status {
+      position: absolute;
+      right: 3.5%;
+      bottom: 4%;
+      z-index: 22;
+      display: none;
+      align-items: center;
+      gap: 7px;
+      max-width: 220px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: rgba(31, 35, 29, .65);
+      color: rgba(255,246,221,.84);
+      font-size: 10px;
+      backdrop-filter: blur(10px);
+    }
+    .record-status.playing { display: flex; }
+    .record-dot { width: 7px; height: 7px; border-radius: 50%; background: #eabf68; box-shadow: 0 0 9px #f5d283; animation: pulse 1.2s ease-in-out infinite alternate; }
+    @keyframes pulse { to { transform: scale(1.45); opacity: .55; } }
+
+    /* 便签折叠为星星并飞向瓶子的完整轨迹。 */
+    .flying-note {
+      position: absolute;
+      z-index: 60;
+      left: var(--from-x);
+      top: var(--from-y);
+      width: 54px;
+      height: 40px;
+      pointer-events: none;
+      animation: note-flight 1.35s cubic-bezier(.2,.65,.25,1) forwards;
+    }
+    .flying-note::before {
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(160,133,81,.25);
+      background: #f6e9bd;
+      box-shadow: 0 7px 16px rgba(46,32,16,.28), 0 0 13px rgba(255,229,145,.58);
+      content: '';
+      animation: paper-fold .48s ease forwards;
+    }
+    .flying-note span { position: absolute; inset: 0; display: grid; place-items: center; color: #e8ba55; font-size: 36px; opacity: 0; filter: drop-shadow(0 0 10px #ffe19b); animation: star-reveal .5s ease .34s forwards; }
+    .flying-note i { position: absolute; top: 50%; right: 100%; width: 100px; height: 2px; background: linear-gradient(to left, #ffe08d, transparent); opacity: .75; }
+    @keyframes paper-fold { 45% { transform: skewY(-16deg) scale(.72); } 100% { transform: rotate(35deg) scale(.18); opacity: 0; } }
+    @keyframes star-reveal { to { opacity: 1; transform: rotate(190deg) scale(.62); } }
+    @keyframes note-flight {
+      0% { transform: translate(0,0) rotate(-4deg); }
+      45% { transform: translate(var(--flight-mid-x), var(--flight-mid-y)) rotate(90deg); }
+      100% { transform: translate(var(--flight-x), var(--flight-y)) rotate(260deg) scale(.45); opacity: .25; }
+    }
+
+    .modal-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      background: rgba(16, 18, 15, .54);
+      backdrop-filter: blur(8px);
+    }
+    .modal-layer.open { display: grid; animation: fade-in .24s ease both; }
+    @keyframes fade-in { from { opacity: 0; } }
+    .modal-card {
+      position: relative;
+      width: min(92vw, 680px);
+      max-height: min(88vh, 760px);
+      overflow: auto;
+      border: 1px solid rgba(119, 93, 55, .24);
+      border-radius: 4px 20px 20px 4px;
+      background:
+        linear-gradient(90deg, rgba(124,91,49,.07) 1px, transparent 1px) 33px 0 / 28px 100%,
+        radial-gradient(circle at 22% 12%, rgba(255,255,255,.56), transparent 30%),
+        var(--paper);
+      padding: clamp(24px, 4vw, 42px);
+      box-shadow: 0 30px 90px rgba(0,0,0,.42), inset 0 1px rgba(255,255,255,.75);
+      animation: card-rise .34s cubic-bezier(.2,.75,.25,1) both;
+    }
+    @keyframes card-rise { from { opacity: 0; transform: translateY(18px) rotate(-.7deg) scale(.98); } }
+    .modal-close { position: absolute; top: 13px; right: 14px; display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 50%; background: rgba(77,83,68,.08); color: #6d7263; cursor: pointer; }
+    .modal-kicker { display: flex; align-items: center; gap: 7px; color: #89816e; font-size: 11px; letter-spacing: .14em; }
+    .modal-card h2 { margin: 8px 36px 6px 0; font-family: 'Noto Serif SC', serif; font-size: clamp(22px, 3vw, 34px); font-weight: 600; color: #3d473b; }
+    .modal-card > p { margin: 0 0 24px; color: #747869; font-family: 'Noto Serif SC', serif; font-size: 13px; line-height: 1.8; }
+    .note-editor {
+      width: 100%;
+      min-height: 150px;
+      resize: vertical;
+      border: 0;
+      border-bottom: 1px solid rgba(105,88,58,.22);
+      outline: none;
+      background: repeating-linear-gradient(to bottom, transparent 0 32px, rgba(112,100,76,.13) 33px);
+      padding: 3px 5px;
+      color: #3c473d;
+      font-family: 'Noto Serif SC', serif;
+      font-size: 17px;
+      line-height: 33px;
+    }
+    .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+    .field-box { display: flex; min-height: 48px; align-items: center; gap: 8px; border: 1px dashed rgba(112,91,55,.28); border-radius: 13px; background: rgba(255,255,255,.26); padding: 10px 12px; color: #686d5f; font-size: 12px; }
+    .field-box input[type="url"] { width: 100%; border: 0; outline: none; background: transparent; color: #475044; }
+    .file-label { cursor: pointer; }
+    .file-label input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .image-preview { display: none; align-items: center; gap: 10px; margin-top: 12px; padding: 9px; border-radius: 12px; background: rgba(91,103,82,.08); font-size: 11px; color: #65705f; }
+    .image-preview.show { display: flex; }
+    .image-preview img { width: 52px; height: 52px; border-radius: 9px; object-fit: cover; }
+    .editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-top: 24px; }
+    .editor-footer small { max-width: 330px; color: #8a887a; font-size: 10px; line-height: 1.6; }
+    .finish-button { border: 0; border-radius: 999px; background: #53614f; padding: 11px 19px; color: #fff8e8; font-family: 'Noto Serif SC', serif; cursor: pointer; box-shadow: 0 8px 20px rgba(61,74,58,.2); transition: transform .2s ease, background .2s ease; }
+    .finish-button:hover { transform: translateY(-2px); background: #43513f; }
+    .album-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    .travel-card { overflow: hidden; border: 7px solid rgba(255,255,255,.72); border-bottom-width: 29px; background: white; box-shadow: 0 8px 20px rgba(53,39,22,.18); transform: rotate(var(--tilt)); }
+    .travel-card img { display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover; }
+    .travel-card figcaption { margin: 7px 4px -22px; color: #65685c; font-family: 'Noto Serif SC', serif; font-size: 10px; }
+    .track-list { display: grid; gap: 10px; }
+    .track-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; border: 1px solid rgba(107,91,63,.18); border-radius: 14px; background: rgba(255,255,255,.28); padding: 12px 14px; color: #4f584c; text-align: left; cursor: pointer; transition: transform .2s ease, background .2s ease; }
+    .track-card:hover, .track-card.active { transform: translateX(3px); background: rgba(255,255,255,.62); }
+    .track-card strong { display: block; font-family: 'Noto Serif SC', serif; }
+    .track-card small { color: #89897b; }
+    .track-card span { color: #b38b3f; font-size: 20px; }
+    .music-controls { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
+    .music-controls button { border: 0; border-radius: 999px; background: #53614f; padding: 10px 17px; color: white; cursor: pointer; }
+    .music-controls input { flex: 1; accent-color: #7e9277; }
+    .source-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+    .source-chip { max-width: 100%; overflow: hidden; border: 1px solid rgba(113,93,58,.19); border-radius: 999px; background: rgba(255,255,255,.38); padding: 7px 11px; color: #6d7163; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .idea-panel { border-left: 3px solid var(--honey); border-radius: 0 14px 14px 0; background: rgba(255,255,255,.36); padding: 18px 20px; }
+    .idea-panel h3 { margin: 0 0 9px; font-family: 'Noto Serif SC', serif; font-size: 19px; color: #475244; }
+    .idea-panel p { margin: 0; color: #596255; font-family: 'Noto Serif SC', serif; font-size: 14px; line-height: 1.9; }
+    .idea-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .idea-actions button { border: 1px solid rgba(89,101,82,.24); border-radius: 999px; background: rgba(255,255,255,.45); padding: 9px 14px; color: #53604f; cursor: pointer; }
+    .toast-stack { position: fixed; left: 50%; bottom: 24px; z-index: 200; display: grid; gap: 8px; transform: translateX(-50%); pointer-events: none; }
+    .toast { border: 1px solid rgba(255,246,213,.25); border-radius: 999px; background: rgba(40,47,39,.84); padding: 9px 15px; color: #fff5d8; font-size: 11px; box-shadow: 0 12px 35px rgba(0,0,0,.28); backdrop-filter: blur(10px); animation: toast-life 2.8s ease forwards; }
+    @keyframes toast-life { 0% { opacity: 0; transform: translateY(8px); } 12%,82% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-7px); } }
+
+    @media (max-width: 720px) {
+      html, body { overflow: auto; background: #222820; }
+      .app-shell { min-height: 100svh; height: auto; align-content: center; padding-top: max(0px, calc((100svh - 56.25vw) / 2)); padding-bottom: max(72px, calc((100svh - 56.25vw) / 2)); }
+      .scene-frame { width: 100vw; height: calc(100vw / 1.7779); min-height: 0; }
+      .privacy-note { display: none; }
+      .brand { top: 2%; transform: scale(.72); transform-origin: top left; }
+      .shake-dock { bottom: -52px; background: rgba(44,49,40,.88); }
+      .record-status { right: 10px; bottom: 9px; }
+      .input-row, .album-grid { grid-template-columns: 1fr; }
+      .modal-card { max-height: 86svh; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+
+<body>
+  <main id="app" class="app-shell">
+    <section id="sceneFrame" class="scene-frame" aria-label="英式田园灵感书桌">
+      <!-- 唯一的完整背景插画。严禁复制、裁切或拆分这张图。 -->
+      <img id="sceneImage" class="scene-image" src="https://cdn.jsdelivr.net/gh/elenacheng2021-spec/xingyu-starjar@main/public/wish-jar-ui-reference.png" alt="蕾丝窗帘与田园窗景前的原木书桌，中央摆放着装满纸星星的玻璃许愿瓶" />
+      <div class="scene-light" aria-hidden="true"></div>
+      <div class="brand" aria-hidden="true"><span class="brand-mark">✦</span><span><strong>星予</strong><small>灵感落下的地方</small></span></div>
+      <div class="privacy-note">🔒 星星仅保存在当前浏览器</div>
+
+      <!-- 瓶内星星和光粒子是独立 UI 动效，不是背景图碎片。 -->
+      <div class="jar-aura" aria-hidden="true"></div>
+      <div id="bottleStars" class="bottle-stars" aria-hidden="true"></div>
+      <div id="ambientParticles" class="ambient-particles" aria-hidden="true"></div>
+      <div id="burstLayer" class="burst-layer" aria-hidden="true"></div>
+
+      <!-- 五个完全透明的 absolute 热区，只负责交互。 -->
+      <div class="hotspot hotspot-lamp" role="button" tabindex="0" data-action="lamp" aria-label="关闭台灯"></div>
+      <div class="hotspot hotspot-note" role="button" tabindex="0" data-action="note" aria-label="打开桌面便签和羽毛笔书写灵感"></div>
+      <div class="hotspot hotspot-jar" role="button" tabindex="0" data-action="jar" aria-label="拖动或点击许愿瓶，摇晃并生成灵感"></div>
+      <div class="hotspot hotspot-album" role="button" tabindex="0" data-action="album" aria-label="打开公共旅行画册"></div>
+      <div class="hotspot hotspot-vinyl" role="button" tabindex="0" data-action="vinyl" aria-label="打开公共唱片册和背景音乐"></div>
+
+      <div class="shake-dock" aria-label="摇瓶控制">
+        <div id="toneDots" class="tone-dots" aria-label="选择联想基调"></div>
+        <button id="shakeButton" class="shake-button" type="button" title="也可以直接拖动瓶子"><span>✦</span><span>摇一摇</span></button>
+        <span id="starCount" class="star-count">0</span>
+      </div>
+      <div id="recordStatus" class="record-status" aria-live="polite"><span class="record-dot"></span><span id="recordStatusText"></span></div>
+    </section>
+  </main>
+
+  <!-- 点击“写好了”后直接自动折叠、飞行和保存，没有单独投递按钮。 -->
+  <div id="noteModal" class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="noteTitle">
+    <section class="modal-card">
+      <button class="modal-close" type="button" data-close="noteModal" aria-label="关闭便签">×</button>
+      <span class="modal-kicker">✎ 桌面便签 · 私人</span>
+      <h2 id="noteTitle">刚才，什么轻轻碰了你一下？</h2>
+      <p>像使用桌上的纸和羽毛笔一样写下它；完成后，便签会自己折成星星。</p>
+      <textarea id="noteText" class="note-editor" maxlength="1200" placeholder="在这里写下今天的想法……"></textarea>
+      <div class="input-row">
+        <label class="field-box file-label"><span>▧</span><span id="fileLabelText">添加一张图片</span><input id="imageInput" type="file" accept="image/*" /></label>
+        <label class="field-box"><span>♫</span><input id="musicLink" type="url" inputmode="url" placeholder="填入音乐链接（可选）" /></label>
+      </div>
+      <div id="imagePreview" class="image-preview"><img id="imagePreviewThumb" alt="待保存图片预览" /><span id="imagePreviewName"></span></div>
+      <div class="editor-footer">
+        <small>文字、压缩后的图片和音乐链接只保存在当前浏览器 localStorage，不会上传到服务器。</small>
+        <button id="finishNote" class="finish-button" type="button">写好了</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- 公共旅行画册：后续只修改脚本中的 TRAVEL_PHOTOS 数组。 -->
+  <div id="albumModal" class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="albumTitle">
+    <section class="modal-card">
+      <button class="modal-close" type="button" data-close="albumModal" aria-label="关闭旅行画册">×</button>
+      <span class="modal-kicker">▤ 公共旅行画册 · 只读</span>
+      <h2 id="albumTitle">远方留下的几帧光</h2>
+      <p>所有访客都会看到同一组预设照片；这里没有上传或编辑入口。</p>
+      <div id="albumGrid" class="album-grid"></div>
+    </section>
+  </div>
+
+  <!-- 公共唱片册：后续只修改脚本中的 BGM_TRACKS 数组。 -->
+  <div id="vinylModal" class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="vinylTitle">
+    <section class="modal-card">
+      <button class="modal-close" type="button" data-close="vinylModal" aria-label="关闭唱片册">×</button>
+      <span class="modal-kicker">◉ 公共唱片册 · 只读</span>
+      <h2 id="vinylTitle">为这一刻放一张唱片</h2>
+      <p>选择网页预设的背景音乐。访客无法上传或新增曲目。</p>
+      <div id="trackList" class="track-list"></div>
+      <div class="music-controls"><button id="playPauseButton" type="button">播放</button><span>音量</span><input id="volumeControl" type="range" min="0" max="1" step="0.05" value="0.35" aria-label="背景音乐音量" /></div>
+    </section>
+  </div>
+
+  <!-- 摇瓶后生成的前端模拟 AI 灵感。 -->
+  <div id="ideaModal" class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="ideaTitle">
+    <section class="modal-card">
+      <button class="modal-close" type="button" data-close="ideaModal" aria-label="关闭灵感结果">×</button>
+      <span class="modal-kicker">✦ 星星碰撞完成</span>
+      <h2 id="ideaTitle">一颗新的创作种子</h2>
+      <p>它不是答案，只是把你已有的碎片从另一个角度重新照亮。</p>
+      <div id="ideaSources" class="source-chips"></div>
+      <div class="idea-panel"><h3 id="ideaHeading"></h3><p id="ideaText"></p></div>
+      <div class="idea-actions"><button id="rerollIdea" type="button">再碰撞一次</button><button id="saveIdea" type="button">收藏为新星</button></div>
+    </section>
+  </div>
+
+  <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+  <audio id="bgmAudio" loop preload="none" crossorigin="anonymous"></audio>
+
+  <script>
+    'use strict';
+
+    /* ================= 公共内容配置区：所有访客看到相同内容 ================= */
+    // 后续只需替换 src 和 caption，无需修改其他逻辑。
+    const TRAVEL_PHOTOS = [
+      { src: 'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=900&q=82', caption: '山谷清晨 · 雾蓝色的风' },
+      { src: 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=900&q=82', caption: '湖畔木屋 · 很慢的一天' },
+      { src: 'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?auto=format&fit=crop&w=900&q=82', caption: '沿途公路 · 去没有名字的地方' },
+      { src: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=82', caption: '田野黄昏 · 被光留住' }
+    ];
+    // 后续将 url 换成你自己的 CDN 音频地址即可。
+    const BGM_TRACKS = [
+      { title: '窗边的慢拍', subtitle: '柔和器乐 · 适合书写', url: 'https://cdn.jsdelivr.net/gh/mdn/webaudio-examples@main/audio-basics/outfoxing.mp3' },
+      { title: '雾里的远行', subtitle: '轻盈键盘 · 适合构思', url: 'https://cdn.jsdelivr.net/gh/mdn/webaudio-examples@main/multi-track/clav.mp3' },
+      { title: '夜色与木纹', subtitle: '安静吉他 · 适合整理', url: 'https://cdn.jsdelivr.net/gh/mdn/webaudio-examples@main/multi-track/leadguitar.mp3' }
+    ];
+    const TONES = [
+      { id: 'warm', name: '暖意', color: '#e7bc5f', direction: '让它更有人情味、更可触摸' },
+      { id: 'mist', name: '冷静', color: '#91adb8', direction: '从结构、节奏与秩序出发' },
+      { id: 'growth', name: '生长', color: '#91a982', direction: '寻找自然、循环与生命感' },
+      { id: 'story', name: '叙事', color: '#d49a8d', direction: '让记忆、关系与情绪成为线索' },
+      { id: 'wonder', name: '奇想', color: '#aa9bc0', direction: '主动制造陌生感，打破熟悉规则' }
+    ];
+
+    /* ================= 个人数据区：只进入当前浏览器 localStorage ================= */
+    const STORAGE_KEY = 'xingyu-starjar-phase-one-v1';
+    let stars = loadStars();
+    let selectedTone = TONES[0];
+    let selectedImage = null;
+    let currentIdea = null;
+    let currentTrackIndex = 0;
+    let lampOn = true;
+    let isShaking = false;
+
+    const app = document.getElementById('app');
+    const sceneFrame = document.getElementById('sceneFrame');
+    const bottleStars = document.getElementById('bottleStars');
+    const ambientParticles = document.getElementById('ambientParticles');
+    const burstLayer = document.getElementById('burstLayer');
+    const starCount = document.getElementById('starCount');
+    const bgmAudio = document.getElementById('bgmAudio');
+
+    function loadStars() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        console.warn('本地灵感读取失败，已使用空瓶。', error);
+        return [];
+      }
+    }
+    function persistStars() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(stars));
+        return true;
+      } catch {
+        showToast('图片较大，本地空间不足；请换一张更小的图片。');
+        return false;
+      }
+    }
+    function makeId() { return window.crypto?.randomUUID?.() || `star-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+    function showToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.textContent = message;
+      document.getElementById('toastStack').appendChild(toast);
+      window.setTimeout(() => toast.remove(), 2900);
+    }
+    function openModal(id) {
+      const modal = document.getElementById(id);
+      modal.classList.add('open');
+      window.setTimeout(() => modal.querySelector('textarea, button, input')?.focus(), 40);
+    }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+    function closeAllModals() { document.querySelectorAll('.modal-layer.open').forEach(modal => modal.classList.remove('open')); }
+
+    /* 瓶内星星：新星漂浮在上部，旧星逐步沉到瓶底。 */
+    function seededNumber(seed, salt) {
+      const text = `${seed}-${salt}`;
+      let hash = 0;
+      for (let index = 0; index < text.length; index += 1) hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+      return (hash % 1000) / 1000;
+    }
+    function renderStars() {
+      bottleStars.innerHTML = '';
+      stars.slice(0, 42).forEach((star, index) => {
+        const element = document.createElement('span');
+        const isNew = index < 4;
+        const horizontal = 8 + seededNumber(star.id, 'x') * 82;
+        const top = isNew ? 13 + index * 8 + seededNumber(star.id, 'new-y') * 9 : 58 + Math.min(28, Math.floor((index - 4) / 5) * 5) + seededNumber(star.id, 'old-y') * 5;
+        element.className = `stored-star${isNew ? ' new' : ''}`;
+        element.textContent = '★';
+        element.style.left = `${horizontal}%`;
+        element.style.top = `${Math.min(top, 90)}%`;
+        element.style.setProperty('--star-color', star.color || '#e8c266');
+        element.style.animationDelay = `${seededNumber(star.id, 'delay') * -3}s`;
+        bottleStars.appendChild(element);
+      });
+      starCount.textContent = String(stars.length);
+      starCount.title = `${stars.length} 颗私人灵感星`;
+    }
+    function createAmbientParticles() {
+      ambientParticles.innerHTML = '';
+      for (let index = 0; index < 26; index += 1) {
+        const particle = document.createElement('i');
+        particle.className = 'ambient-particle';
+        particle.textContent = index % 3 ? '✦' : '·';
+        particle.style.setProperty('--x', `${39 + Math.random() * 22}%`);
+        particle.style.setProperty('--y', `${27 + Math.random() * 48}%`);
+        particle.style.setProperty('--duration', `${2.6 + Math.random() * 3.8}s`);
+        particle.style.setProperty('--delay', `${-Math.random() * 5}s`);
+        ambientParticles.appendChild(particle);
+      }
+    }
+    function createBurst() {
+      burstLayer.innerHTML = '';
+      for (let index = 0; index < 34; index += 1) {
+        const particle = document.createElement('i');
+        const angle = (Math.PI * 2 * index) / 34 + Math.random() * .3;
+        const distance = 60 + Math.random() * 170;
+        particle.className = 'burst-particle';
+        particle.textContent = index % 4 ? '✦' : '★';
+        particle.style.left = `${49 + (Math.random() - .5) * 5}%`;
+        particle.style.top = `${48 + (Math.random() - .5) * 9}%`;
+        particle.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+        particle.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
+        particle.style.setProperty('--turn', `${Math.random() * 360}deg`);
+        burstLayer.appendChild(particle);
+      }
+      window.setTimeout(() => { burstLayer.innerHTML = ''; }, 1200);
+    }
+
+    /* 桌面便签：支持文字、图片、音乐链接；“写好了”后自动投星。 */
+    function resetNoteForm() {
+      document.getElementById('noteText').value = '';
+      document.getElementById('musicLink').value = '';
+      document.getElementById('imageInput').value = '';
+      document.getElementById('fileLabelText').textContent = '添加一张图片';
+      document.getElementById('imagePreview').classList.remove('show');
+      document.getElementById('imagePreviewThumb').removeAttribute('src');
+      selectedImage = null;
+    }
+    async function compressImage(file) {
+      const source = await createImageBitmap(file);
+      const ratio = Math.min(1, 900 / Math.max(source.width, source.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(source.width * ratio);
+      canvas.height = Math.round(source.height * ratio);
+      const context = canvas.getContext('2d', { alpha: false });
+      context.drawImage(source, 0, 0, canvas.width, canvas.height);
+      const sample = context.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
+      const hex = `#${[sample[0], sample[1], sample[2]].map(value => value.toString(16).padStart(2, '0')).join('')}`;
+      source.close();
+      return { dataUrl: canvas.toDataURL('image/jpeg', .72), descriptor: `一张名为“${file.name}”的图片，中心色调接近 ${hex}`, name: file.name };
+    }
+    async function handleImageSelection(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) { showToast('请选择图片文件。'); return; }
+      document.getElementById('fileLabelText').textContent = '正在整理图片…';
+      try {
+        selectedImage = await compressImage(file);
+        document.getElementById('fileLabelText').textContent = selectedImage.name;
+        document.getElementById('imagePreviewThumb').src = selectedImage.dataUrl;
+        document.getElementById('imagePreviewName').textContent = selectedImage.descriptor;
+        document.getElementById('imagePreview').classList.add('show');
+      } catch {
+        selectedImage = null;
+        showToast('这张图片暂时无法读取，请换一张试试。');
+      }
+    }
+    function validateMusicLink(value) {
+      if (!value) return '';
+      try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) ? url.href : ''; }
+      catch { return ''; }
+    }
+    function flyNoteToJar(onComplete) {
+      const noteZone = sceneFrame.querySelector('.hotspot-note').getBoundingClientRect();
+      const jarZone = sceneFrame.querySelector('.hotspot-jar').getBoundingClientRect();
+      const frameBox = sceneFrame.getBoundingClientRect();
+      const flyer = document.createElement('div');
+      flyer.className = 'flying-note';
+      flyer.innerHTML = '<i></i><span>★</span>';
+      flyer.style.setProperty('--from-x', `${noteZone.left - frameBox.left + noteZone.width * .5}px`);
+      flyer.style.setProperty('--from-y', `${noteZone.top - frameBox.top + noteZone.height * .35}px`);
+      const fromX = noteZone.left - frameBox.left + noteZone.width * .5;
+      const fromY = noteZone.top - frameBox.top + noteZone.height * .35;
+      const toX = jarZone.left - frameBox.left + jarZone.width * .5;
+      const toY = jarZone.top - frameBox.top + jarZone.height * .48;
+      flyer.style.setProperty('--flight-x', `${toX - fromX}px`);
+      flyer.style.setProperty('--flight-y', `${toY - fromY}px`);
+      flyer.style.setProperty('--flight-mid-x', `${(toX - fromX) * .48}px`);
+      flyer.style.setProperty('--flight-mid-y', `${Math.min(-90, (toY - fromY) * .35 - 55)}px`);
+      sceneFrame.appendChild(flyer);
+      window.setTimeout(() => { flyer.remove(); createBurst(); onComplete(); }, 1380);
+    }
+    function finishWriting() {
+      const text = document.getElementById('noteText').value.trim();
+      const rawMusicLink = document.getElementById('musicLink').value.trim();
+      const musicLink = validateMusicLink(rawMusicLink);
+      if (rawMusicLink && !musicLink) { showToast('音乐链接需要以 http:// 或 https:// 开头。'); return; }
+      if (!text && !selectedImage && !musicLink) { showToast('先写一句话、放一张图片，或留下一段音乐链接吧。'); return; }
+      const newStar = {
+        id: makeId(), type: 'note', text,
+        imageData: selectedImage?.dataUrl || '', imageDescription: selectedImage?.descriptor || '',
+        musicLink, createdAt: Date.now(), color: selectedTone.color
+      };
+      closeModal('noteModal');
+      const finishButton = document.getElementById('finishNote');
+      finishButton.disabled = true;
+      flyNoteToJar(() => {
+        stars.unshift(newStar);
+        if (persistStars()) { renderStars(); showToast('便签已经自己折成星星，落进瓶子里了。'); resetNoteForm(); }
+        finishButton.disabled = false;
+      });
+    }
+
+    /* 摇瓶与前端模拟 AI：只重组当前浏览器里的私人星星。 */
+    function starSummary(star) {
+      if (star.text) return star.text.replace(/\s+/g, ' ').slice(0, 46);
+      if (star.imageDescription) return star.imageDescription.slice(0, 46);
+      if (star.musicLink) { try { return `来自 ${new URL(star.musicLink).hostname} 的一段音乐`; } catch { return '一段被保存的音乐'; } }
+      return '一颗还没有名字的星';
+    }
+    function chooseRandom(items) { return items[Math.floor(Math.random() * items.length)]; }
+    function shuffle(items) { return [...items].sort(() => Math.random() - .5); }
+    function buildIdea() {
+      const selected = shuffle(stars).slice(0, Math.min(stars.length, Math.random() > .45 ? 3 : 2));
+      const summaries = selected.map(starSummary);
+      const first = summaries[0] || '一种刚刚闪过的感受';
+      const second = summaries[1] || '一个意外的动作';
+      const third = summaries[2];
+      const lenses = ['把它设计成只在用户停顿三秒后才出现的细节', '让声音先于画面发生，再让画面追上声音', '把最重要的信息藏进一次看似无用的触摸里', '用光线浓度代替数字，让变化可以被感受而不是被读取', '将进入、停留、离开分别设计成三种不同材质的反馈'];
+      const formats = ['一段可交互的空间叙事', '一张会随时间变化的视觉海报', '一个只有两步操作的微型工具', '一组带声音的滚动镜头', '一件可以被反复触摸的数字物件'];
+      const titles = [`让「${first}」拥有「${second}」的行为`, `把「${second}」藏进「${first}」的背面`, `当「${first}」在等待「${second}」`, `用「${second}」重新测量「${first}」`];
+      const heading = chooseRandom(titles);
+      const text = `以“${selectedTone.name}”为基调，${selectedTone.direction}。尝试把“${first}”当作作品的主体，把“${second}”变成它唯一的交互规则${third ? `，再让“${third}”只在最后一刻短暂出现` : ''}。做成${chooseRandom(formats)}；${chooseRandom(lenses)}。先不要解释主题，只用一个局部反馈让观众感觉这几个碎片本来就属于同一个世界。`;
+      return { selected, heading, text };
+    }
+    function renderIdea() {
+      currentIdea = buildIdea();
+      document.getElementById('ideaHeading').textContent = currentIdea.heading;
+      document.getElementById('ideaText').textContent = currentIdea.text;
+      const sources = document.getElementById('ideaSources');
+      sources.innerHTML = '';
+      currentIdea.selected.forEach(star => {
+        const chip = document.createElement('span');
+        chip.className = 'source-chip';
+        chip.textContent = `★ ${starSummary(star)}`;
+        sources.appendChild(chip);
+      });
+    }
+    function triggerShake() {
+      if (isShaking) return;
+      if (!stars.length) { showToast('瓶子还是空的，先去桌面便签写下一颗星吧。'); return; }
+      isShaking = true;
+      closeAllModals();
+      app.classList.add('jar-shaking');
+      createBurst();
+      window.setTimeout(createBurst, 380);
+      window.setTimeout(() => { app.classList.remove('jar-shaking'); renderIdea(); openModal('ideaModal'); isShaking = false; }, 1450);
+    }
+    function saveGeneratedIdea() {
+      if (!currentIdea) return;
+      stars.unshift({ id: makeId(), type: 'generated', text: `${currentIdea.heading}\n${currentIdea.text}`, imageData: '', imageDescription: '', musicLink: '', createdAt: Date.now(), color: selectedTone.color });
+      if (persistStars()) { renderStars(); closeModal('ideaModal'); createBurst(); showToast('这次碰撞已经收藏为一颗新星。'); }
+    }
+
+    // 许愿瓶拖拽：累计移动超过 34px 触发；单击则作为触屏与键盘后备入口。
+    const jarHotspot = document.querySelector('.hotspot-jar');
+    let dragStart = null;
+    let dragDistance = 0;
+    jarHotspot.addEventListener('pointerdown', event => {
+      dragStart = { x: event.clientX, y: event.clientY };
+      dragDistance = 0;
+      jarHotspot.setPointerCapture?.(event.pointerId);
+    });
+    jarHotspot.addEventListener('pointermove', event => {
+      if (!dragStart) return;
+      dragDistance = Math.max(dragDistance, Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y));
+      if (dragDistance > 8) app.classList.add('jar-shaking');
+    });
+    jarHotspot.addEventListener('pointerup', () => { app.classList.remove('jar-shaking'); dragStart = null; triggerShake(); });
+    jarHotspot.addEventListener('pointercancel', () => { dragStart = null; app.classList.remove('jar-shaking'); });
+
+    /* 台灯、公共画册与公共 BGM。 */
+    function toggleLamp() {
+      lampOn = !lampOn;
+      app.classList.toggle('lamp-off', !lampOn);
+      document.querySelector('.hotspot-lamp').setAttribute('aria-label', lampOn ? '关闭台灯' : '打开台灯');
+      showToast(lampOn ? '台灯亮起，桌面重新暖了起来。' : '台灯熄灭，瓶子还留着一点自己的光。');
+    }
+    function renderAlbum() {
+      const grid = document.getElementById('albumGrid');
+      grid.innerHTML = '';
+      TRAVEL_PHOTOS.forEach((photo, index) => {
+        const figure = document.createElement('figure');
+        figure.className = 'travel-card';
+        figure.style.setProperty('--tilt', `${index % 2 ? 1.1 : -1.1}deg`);
+        figure.innerHTML = `<img src="${photo.src}" alt="${photo.caption}" loading="lazy"><figcaption>${photo.caption}</figcaption>`;
+        grid.appendChild(figure);
+      });
+    }
+    function renderTracks() {
+      const list = document.getElementById('trackList');
+      list.innerHTML = '';
+      BGM_TRACKS.forEach((track, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `track-card${index === currentTrackIndex ? ' active' : ''}`;
+        button.innerHTML = `<span>◉</span><div><strong>${track.title}</strong><small>${track.subtitle}</small></div><span>${index === currentTrackIndex && !bgmAudio.paused ? 'Ⅱ' : '▶'}</span>`;
+        button.addEventListener('click', () => selectTrack(index, true));
+        list.appendChild(button);
+      });
+    }
+    async function selectTrack(index, autoplay) {
+      const wasNewTrack = index !== currentTrackIndex || !bgmAudio.src;
+      currentTrackIndex = index;
+      if (wasNewTrack) bgmAudio.src = BGM_TRACKS[index].url;
+      if (autoplay) { try { await bgmAudio.play(); } catch { showToast('浏览器暂时阻止了播放，请再点一次播放。'); } }
+      updateMusicState();
+      renderTracks();
+    }
+    async function toggleMusic() {
+      if (!bgmAudio.src) bgmAudio.src = BGM_TRACKS[currentTrackIndex].url;
+      if (bgmAudio.paused) { try { await bgmAudio.play(); } catch { showToast('音频加载失败，可在配置区替换 BGM 链接。'); } }
+      else bgmAudio.pause();
+      updateMusicState();
+      renderTracks();
+    }
+    function updateMusicState() {
+      const playing = !bgmAudio.paused && Boolean(bgmAudio.src);
+      document.getElementById('playPauseButton').textContent = playing ? '暂停' : '播放';
+      document.getElementById('recordStatus').classList.toggle('playing', playing);
+      document.getElementById('recordStatusText').textContent = playing ? BGM_TRACKS[currentTrackIndex].title : '';
+    }
+
+    /* 热区事件、键盘操作和初始化。 */
+    function runHotspotAction(action) {
+      if (action === 'lamp') toggleLamp();
+      if (action === 'note') openModal('noteModal');
+      if (action === 'album') openModal('albumModal');
+      if (action === 'vinyl') { renderTracks(); openModal('vinylModal'); }
+    }
+    document.querySelectorAll('.hotspot:not(.hotspot-jar)').forEach(hotspot => {
+      hotspot.addEventListener('click', () => runHotspotAction(hotspot.dataset.action));
+      hotspot.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); runHotspotAction(hotspot.dataset.action); }
+      });
+    });
+    jarHotspot.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); triggerShake(); } });
+    document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => closeModal(button.dataset.close)));
+    document.querySelectorAll('.modal-layer').forEach(modal => modal.addEventListener('click', event => { if (event.target === modal) closeModal(modal.id); }));
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') closeAllModals();
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && document.getElementById('noteModal').classList.contains('open')) finishWriting();
+    });
+    document.getElementById('imageInput').addEventListener('change', handleImageSelection);
+    document.getElementById('finishNote').addEventListener('click', finishWriting);
+    document.getElementById('shakeButton').addEventListener('click', triggerShake);
+    document.getElementById('rerollIdea').addEventListener('click', renderIdea);
+    document.getElementById('saveIdea').addEventListener('click', saveGeneratedIdea);
+    document.getElementById('playPauseButton').addEventListener('click', toggleMusic);
+    document.getElementById('volumeControl').addEventListener('input', event => { bgmAudio.volume = Number(event.target.value); });
+    bgmAudio.addEventListener('play', updateMusicState);
+    bgmAudio.addEventListener('pause', updateMusicState);
+    bgmAudio.addEventListener('error', () => showToast('当前 BGM 地址无法播放，请在配置区替换链接。'));
+
+    const toneDots = document.getElementById('toneDots');
+    TONES.forEach((tone, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `tone-dot${index === 0 ? ' active' : ''}`;
+      button.style.setProperty('--dot', tone.color);
+      button.title = `${tone.name}：${tone.direction}`;
+      button.setAttribute('aria-label', `选择${tone.name}联想基调`);
+      button.addEventListener('click', () => {
+        selectedTone = tone;
+        toneDots.querySelectorAll('.tone-dot').forEach(dot => dot.classList.remove('active'));
+        button.classList.add('active');
+        showToast(`这次碰撞会偏向“${tone.name}”。`);
+      });
+      toneDots.appendChild(button);
+    });
+
+    bgmAudio.volume = .35;
+    bgmAudio.src = BGM_TRACKS[0].url;
+    renderAlbum();
+    renderTracks();
+    renderStars();
+    createAmbientParticles();
+  </script>
+</body>
 </html>
